@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export IKS_REGION=${IKS_REGION:-"<target_region>""}
+export IKS_REGION=${IKS_REGION:-"<target_region>"}
 export IKS_ACCOUNT=${IKS_ACCOUNT:-"<your_account_id>"}
 export IKS_CLUSTER=${IKS_CLUSTER:-"<your_cluster_name>"}
 
@@ -62,6 +62,9 @@ echo "          - $JENKINS_HOSTNAME.$INGRESS_SUBDOMAIN" >> cmt-jenkins-values.ya
 
 # Plugins to install:
 # - latest version of jenkins community chart default install plugins
+# - ibm-cloud-devops
+# - oic-auth (for IAM SSO)
+
 # To install the latest version of the default plugins plus the one for IKS config,
 # complete cmt-jenkins-values.yaml with:
 echo "  InstallPlugins:" >> cmt-jenkins-values.yaml
@@ -70,6 +73,9 @@ echo "    - workflow-job:latest" >> cmt-jenkins-values.yaml
 echo "    - workflow-aggregator:latest" >> cmt-jenkins-values.yaml
 echo "    - credentials-binding:latest" >> cmt-jenkins-values.yaml
 echo "    - git:latest" >> cmt-jenkins-values.yaml
+echo "    - ibm-cloud-devops:latest" >> cmt-jenkins-values.yaml
+# for IAM SSO
+echo "    - oic-auth:latest" >> cmt-jenkins-values.yaml
 # for IBM Cloud Object Storage usage with S3 plugin
 echo "    - s3:latest"  >> cmt-jenkins-values.yaml
 
@@ -289,8 +295,8 @@ Master:
         ContainerTemplate ct = new ContainerTemplate("nodejs", "node:6-alpine");
         ct.setPrivileged(true);
         ct.setTtyEnabled(true);
-        // ct.setResourceRequestCpu("1000m")
-        // ct.setResourceLimitCpu("2000m")
+        ct.setResourceRequestCpu("1000m")
+        ct.setResourceLimitCpu("2000m")
         ct.setResourceRequestMemory("1Gi")
         ct.setResourceLimitMemory("2Gi")
         containerTemplates.add(ct)
@@ -300,8 +306,8 @@ Master:
         ct = new ContainerTemplate("docker", "docker:stable");
         ct.setPrivileged(true);
         ct.setTtyEnabled(true);
-        // ct.setResourceRequestCpu("1000m")
-        // ct.setResourceLimitCpu("2000m")
+        ct.setResourceRequestCpu("1000m")
+        ct.setResourceLimitCpu("2000m")
         ct.setResourceRequestMemory("1Gi")
         ct.setResourceLimitMemory("2Gi")
         containerTemplates.add(ct)
@@ -354,7 +360,7 @@ EOT
 #    $ bx iam api-keys
 #    $ bx iam api-key-create 
 cat >> cmt-jenkins-sample-values.yaml <<'EOT'
-  Jobs:
+  Jobs: |-
     sample: |-
       <flow-definition plugin="workflow-job@2.25">
         <actions>
@@ -383,6 +389,10 @@ cat >> cmt-jenkins-sample-values.yaml <<'EOT'
           // TARGET CLUSTER
           K8S_CLUSTER = &quot;<your_cluster_name>&quot;
           K8S_NAMESPACE = &quot;default&quot;
+          // IBM Cloud DevOps plugin variables
+          IBM_CLOUD_DEVOPS_API_KEY = credentials(&apos;ibmcloud-apikey&apos;)
+          IBM_CLOUD_DEVOPS_APP_NAME = &apos;sample-node-react-app&apos;
+          IBM_CLOUD_DEVOPS_TOOLCHAIN_ID = &apos;put-toolchain-id-here&apos;
         }
         stages {
           stage(&apos;Preparation&apos;) {
@@ -400,6 +410,15 @@ cat >> cmt-jenkins-sample-values.yaml <<'EOT'
               steps {
                 container(&quot;nodejs&quot;) {
                   sh &apos;npm install&apos;
+                }
+              }
+              // post build section to use &quot;publishBuildRecord&quot; method to publish build record
+              post {
+                success {
+                  publishBuildRecord gitBranch: &quot;${GIT_BRANCH}&quot;, gitCommit: &quot;${GIT_COMMIT}&quot;, gitRepo: &quot;${GIT_REPO}&quot;, result:&quot;SUCCESS&quot;
+                    }
+                failure {
+                  publishBuildRecord gitBranch: &quot;${GIT_BRANCH}&quot;, gitCommit: &quot;${GIT_COMMIT}&quot;, gitRepo: &quot;${GIT_REPO}&quot;, result:&quot;FAIL&quot;
                 }
               }
           }
@@ -492,6 +511,14 @@ cat >> cmt-jenkins-sample-values.yaml <<'EOT'
                   echo &quot;App is accessible there: http://$APP_IP:$APP_PORT&quot;
       
                   &apos;&apos;&apos;
+              }
+            }
+            post {
+              success {
+                publishDeployRecord environment: &quot;US-South&quot;, result:&quot;SUCCESS&quot;, buildNumber: &quot;${BUILD_ID}&quot;
+              }
+              failure {
+                publishDeployRecord environment: &quot;US-South&quot;, result:&quot;FAIL&quot;, buildNumber: &quot;${BUILD_ID}&quot;
               }
             }
           }
